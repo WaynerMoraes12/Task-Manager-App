@@ -1,0 +1,16 @@
+{
+  "name": "chatbot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "App.js",  
+  "scripts": {
+    "start": "expo start"  
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "expo": "^54.0.23",  
+    "react-native": "^0.82.1"  
+  }
+}
