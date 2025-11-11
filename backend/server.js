@@ -19,10 +19,7 @@ const { specs, swaggerUi } = require('./docs/swaggerConfig');
 const app = express();
 
 // Usar PORT do environment ou 3000 como fallback
-const PORT = process.env.PORT || 3000;
-
-// Conectar ao MongoDB
-connectDB();
+const PORT = process.env.PORT;
 
 // Middleware
 app.use(cors());
@@ -37,10 +34,10 @@ app.use('/api/statistics', statisticsRoutes);
 
 // Rota de saúde
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'API está funcionando!',
-    environment: process.env.NODE_ENV || 'development',
+    environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString()
   });
 });
@@ -62,7 +59,14 @@ app.get('/', (req, res) => {
 });
 
 // Iniciar servidor
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  // Conectar ao MongoDB
+  try {
+    await connectDB();
+  } catch (error) {
+    console.error('❌ Erro ao conectar com MongoDB:', error.message);
+    process.exit(1);
+  }
   console.log(`\n${'='.repeat(50)}`);
   console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
   console.log(`📊 API disponível em http://localhost:${PORT}/api`);

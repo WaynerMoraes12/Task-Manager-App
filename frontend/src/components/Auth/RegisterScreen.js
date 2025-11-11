@@ -12,12 +12,14 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import styles from '../../styles/styles';
 
-export default function VerifyScreen() {
+export default function RegisterScreen() {
   const {
-    verificationCode,
-    setVerificationCode,
+    loginEmail,
+    setLoginEmail,
+    loginName,
+    setLoginName,
     loading,
-    handleVerifyCode,
+    handleRegister,
     setAuthStep
   } = useAuth();
 
@@ -28,34 +30,45 @@ export default function VerifyScreen() {
     >
       <ScrollView contentContainerStyle={styles.authContent}>
         <View style={styles.authHeader}>
-          <Text style={styles.authLogo}>🔐</Text>
-          <Text style={styles.authTitle}>Verificação</Text>
-          <Text style={styles.authSubtitle}>Digite o código de 6 dígitos enviado para seu email</Text>
+          <Text style={styles.authLogo}>📋</Text>
+          <Text style={styles.authTitle}>Criar Conta</Text>
+          <Text style={styles.authSubtitle}>Cadastre-se para começar a usar o TaskManager</Text>
         </View>
 
         <View style={styles.authForm}>
-          <Text style={styles.formLabel}>Código de Verificação</Text>
+          <Text style={styles.formLabel}>Nome completo</Text>
           <TextInput
-            style={[styles.authInput, styles.codeInput]}
-            placeholder="000000"
+            style={styles.authInput}
+            placeholder="Digite seu nome completo"
             placeholderTextColor="#999"
-            value={verificationCode}
-            onChangeText={setVerificationCode}
+            value={loginName}
+            onChangeText={setLoginName}
             editable={!loading}
-            keyboardType="number-pad"
-            maxLength={6}
-            textAlign="center"
+            autoCapitalize="words"
+          />
+
+          <Text style={styles.formLabel}>Email</Text>
+          <TextInput
+            style={styles.authInput}
+            placeholder="seu@email.com"
+            placeholderTextColor="#999"
+            value={loginEmail}
+            onChangeText={setLoginEmail}
+            editable={!loading}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
           />
           
           <TouchableOpacity 
             style={[styles.authButton, loading && styles.buttonDisabled]} 
-            onPress={handleVerifyCode}
+            onPress={handleRegister}
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.authButtonText}>Verificar Código</Text>
+              <Text style={styles.authButtonText}>Cadastrar e Enviar Código</Text>
             )}
           </TouchableOpacity>
 
