@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Board = require('../models/Board');
 const List = require('../models/List');
+const Task = require('../models/Task');
 
 // Criar lista
 router.post('/:boardId/lists', async (req, res) => {
@@ -9,13 +10,17 @@ router.post('/:boardId/lists', async (req, res) => {
     const { boardId } = req.params;
     const { title } = req.body;
 
+    if (!title || !title.trim()) {
+      return res.status(400).json({ success: false, message: 'Título é obrigatório' });
+    }
+
     const board = await Board.findById(boardId);
     if (!board) {
       return res.status(404).json({ success: false, message: 'Quadro não encontrado' });
     }
 
     const newList = new List({
-      title,
+      title: title.trim(),
       tasks: []
     });
 
@@ -24,7 +29,17 @@ router.post('/:boardId/lists', async (req, res) => {
     // Adicionar lista ao board
     board.lists.push(newList._id);
     await board.save();
-    res.json({ success: true, data: newList });
+
+    const updatedBoard = await Board.findById(boardId)
+      .populate({
+        path: 'lists',
+        populate: {
+          path: 'tasks',
+          model: 'Task'
+        }
+      });
+
+    res.json({ success: true, board: updatedBoard, data: newList });
   } catch (error) {
     console.error('Erro ao criar lista:', error);
     res.status(500).json({ success: false, message: 'Erro interno do servidor' });
@@ -73,8 +88,6 @@ router.delete('/:boardId/lists/:listId', async (req, res) => {
       await Task.deleteMany({ _id: { $in: list.tasks } });
       await List.findByIdAndDelete(listId);
     }
-
-    console.log(`🗑️ Lista deletada: ${list?.title}`);
 
     res.json({ success: true, message: 'Lista deletada' });
   } catch (error) {

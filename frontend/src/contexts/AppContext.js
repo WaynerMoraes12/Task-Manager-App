@@ -22,23 +22,83 @@ export function AppProvider({ children }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
 
+  const normalizeTask = (task) => {
+    if (!task) return task;
+    return {
+      ...task,
+      id: task.id || task._id,
+    };
+  };
+
+  const normalizeList = (list) => {
+    if (!list) return list;
+    return {
+      ...list,
+      id: list.id || list._id,
+      tasks: (list.tasks || []).map(normalizeTask),
+    };
+  };
+
+  const normalizeBoard = (board) => {
+    if (!board) return board;
+    return {
+      ...board,
+      id: board.id || board._id,
+      lists: (board.lists || []).map(normalizeList),
+    };
+  };
+
   useEffect(() => {
     if (currentUser) {
       loadBoards();
+    } else {
+      setBoards([]);
+      setSelectedBoard(null);
     }
-  }, [currentUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
+  const ensureDefaultBoard = async () => {
+    if (!currentUser) return null;
+
+    try {
+      const response = await boardsAPI.createBoard(currentUser.id, 'Meu primeiro quadro');
+      if (response.success) {
+        const normalizedBoard = normalizeBoard(response.data);
+        setBoards([normalizedBoard]);
+        setSelectedBoard(normalizedBoard);
+        return normalizedBoard;
+      }
+    } catch (error) {
+      console.error('Erro ao criar quadro padrão:', error);
+    }
+    return null;
+  };
 
   const loadBoards = async () => {
     if (!currentUser) return;
-    
+
     setLoading(true);
     try {
-      const data = await boardsAPI.getBoards(currentUser.id);
-      
+      let data = await boardsAPI.getBoards(currentUser.id);
+
       if (data.success) {
-        setBoards(data.data);
-        if (data.data.length > 0) {
-          setSelectedBoard(data.data[0]);
+        let boardsData = data.data || [];
+
+        if (boardsData.length === 0) {
+          const defaultBoard = await ensureDefaultBoard();
+          if (defaultBoard) {
+            setLoading(false);
+            return;
+          }
+        }
+
+        const normalizedBoards = boardsData.map(normalizeBoard);
+        setBoards(normalizedBoards);
+        if (normalizedBoards.length > 0) {
+          setSelectedBoard(normalizedBoards[0]);
+        } else {
+          setSelectedBoard(null);
         }
       }
     } catch (error) {
@@ -49,18 +109,46 @@ export function AppProvider({ children }) {
   };
 
   const createList = async () => {
-    if (!formTitle.trim() || !selectedBoard) {
+    const trimmedTitle = formTitle.trim();
+
+    let targetBoard = selectedBoard;
+
+    if (!targetBoard) {
+      const createdBoard = await ensureDefaultBoard();
+      if (!createdBoard) {
+        showAlert('Erro', 'Crie ou selecione um quadro antes de adicionar listas.');
+        return false;
+      }
+      targetBoard = createdBoard;
+    }
+
+    const boardId = targetBoard.id || targetBoard._id;
+
+    if (!boardId) {
+      showAlert('Erro', 'Não foi possível identificar o quadro selecionado.');
+      return false;
+    }
+
+    if (!trimmedTitle) {
       showAlert('Erro', 'Digite o nome da lista');
       return false;
     }
 
     setLoading(true);
     try {
-      const data = await listsAPI.createList(selectedBoard.id, formTitle);
-      
+      const data = await listsAPI.createList(boardId, trimmedTitle);
+
       if (data.success) {
-        setSelectedBoard(data.board);
-        setBoards(boards.map(b => b.id === data.board.id ? data.board : b));
+        const updatedBoard = normalizeBoard(data.board);
+
+        setSelectedBoard(updatedBoard);
+        setBoards(prevBoards => {
+          const exists = prevBoards.some(b => b.id === updatedBoard.id);
+          if (!exists) {
+            return [...prevBoards, updatedBoard];
+          }
+          return prevBoards.map(b => (b.id === updatedBoard.id ? updatedBoard : b));
+        });
         closeModal();
         showAlert('Sucesso', 'Lista criada!');
         return true;
@@ -89,11 +177,15 @@ export function AppProvider({ children }) {
         responsible: formResponsible || currentUser?.name || 'Você'
       };
 
-      const data = await tasksAPI.createTask(selectedBoard.id, selectedList.id, taskData);
-      
+      const boardId = selectedBoard.id || selectedBoard._id;
+      const listId = selectedList.id || selectedList._id;
+
+      const data = await tasksAPI.createTask(boardId, listId, taskData);
+
       if (data.success) {
-        setSelectedBoard(data.board);
-        setBoards(boards.map(b => b.id === data.board.id ? data.board : b));
+        const updatedBoard = normalizeBoard(data.board);
+        setSelectedBoard(updatedBoard);
+        setBoards(prevBoards => prevBoards.map(b => (b.id === updatedBoard.id ? updatedBoard : b)));
         closeModal();
         showAlert('Sucesso', 'Tarefa criada!');
         return true;
@@ -112,11 +204,20 @@ export function AppProvider({ children }) {
 
     setLoading(true);
     try {
-      const data = await tasksAPI.updateTask(selectedBoard.id, listId, taskId, { status: 'completed' });
-      
+      const boardId = selectedBoard.id || selectedBoard._id;
+      const data = await tasksAPI.updateTask(boardId, listId, taskId, { status: 'completed' });
       if (data.success) {
-        setSelectedBoard(data.board);
-        setBoards(boards.map(b => b.id === data.board.id ? data.board : b));
+        const updatedTask = data.data;
+        const updatedBoard = { ...selectedBoard };
+        const listIndex = updatedBoard.lists.findIndex(list => list.id === listId);
+        if (listIndex !== -1) {
+          const taskIndex = updatedBoard.lists[listIndex].tasks.findIndex(task => task.id === taskId);
+          if (taskIndex !== -1) {
+            updatedBoard.lists[listIndex].tasks[taskIndex] = updatedTask;
+            setSelectedBoard(updatedBoard);
+            setBoards(prevBoards => prevBoards.map(b => (b.id === updatedBoard.id ? updatedBoard : b)));
+          }
+        }
         return true;
       }
     } catch (error) {
@@ -133,14 +234,31 @@ export function AppProvider({ children }) {
     showConfirm('Confirmar', 'Deletar tarefa?', async () => {
       setLoading(true);
       try {
-        const data = await tasksAPI.deleteTask(selectedBoard.id, listId, taskId);
-        
+        const boardId = selectedBoard.id || selectedBoard._id;
+        const data = await tasksAPI.deleteTask(boardId, listId, taskId);
+        console.log('deleteTask data:', JSON.stringify(data));
+
         if (data.success) {
-          setSelectedBoard(data.board);
-          setBoards(boards.map(b => b.id === data.board.id ? data.board : b));
+          // Atualizar o estado local removendo a tarefa
+          const updatedBoard = { ...selectedBoard };
+
+          // Encontrar a lista que contém a tarefa
+          const listIndex = updatedBoard.lists.findIndex(list => list.id === listId);
+          if (listIndex !== -1) {
+            // Remover a tarefa da lista
+            updatedBoard.lists[listIndex].tasks = updatedBoard.lists[listIndex].tasks.filter(
+              task => task.id !== taskId
+            );
+
+            // Atualizar os estados
+            setSelectedBoard(updatedBoard);
+            setBoards(prevBoards =>
+              prevBoards.map(b => (b.id === updatedBoard.id ? updatedBoard : b))
+            );
+          }
         }
       } catch (error) {
-        console.error(error);
+        console.error('Erro ao deletar tarefa:', error);
       } finally {
         setLoading(false);
       }
@@ -156,32 +274,32 @@ export function AppProvider({ children }) {
 
     try {
       const data = await chatbotAPI.sendMessage(userMessage, currentUser.id);
-      
+
       if (data.success) {
         setChatMessages(prev => [...prev, { text: data.reply, sender: 'bot' }]);
       }
     } catch (error) {
-      setChatMessages(prev => [...prev, { 
-        text: 'Chatbot não está rodando! Inicie: cd chatbot && python chatbot.py', 
-        sender: 'bot' 
+      setChatMessages(prev => [...prev, {
+        text: 'Chatbot não está rodando! Inicie: cd chatbot && python chatbot.py',
+        sender: 'bot'
       }]);
       console.error(error);
     }
   };
 
-  const openModal = (type, list) => { 
-    setModalType(type); 
-    if (list) setSelectedList(list); 
-    setModalVisible(true); 
+  const openModal = (type, list) => {
+    setModalType(type);
+    if (list) setSelectedList(list);
+    setModalVisible(true);
   };
-  
-  const closeModal = () => { 
-    setModalVisible(false); 
-    setFormTitle(''); 
-    setFormDescription(''); 
-    setFormDeadline(''); 
-    setFormResponsible(''); 
-    setSelectedList(null); 
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setFormTitle('');
+    setFormDescription('');
+    setFormDeadline('');
+    setFormResponsible('');
+    setSelectedList(null);
   };
 
   const handleModalSubmit = () => {
